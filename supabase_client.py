@@ -18,10 +18,22 @@ class SupabaseClient:
         
         # Get Supabase credentials
         supabase_url = os.getenv('SUPABASE_URL')
-        supabase_key = os.getenv('SUPABASE_SERVICE_ROLE') or os.getenv('SUPABASE_KEY')
+        
+        # Explicitly try to use the service role key first, then fall back to regular key
+        service_role_key = os.getenv('SUPABASE_SERVICE_ROLE')
+        regular_key = os.getenv('SUPABASE_KEY')
+        
+        # Determine which key to use, prioritizing service role key
+        supabase_key = service_role_key if service_role_key else regular_key
+        
+        # Log which key is being used (without exposing the actual key)
+        if service_role_key:
+            logger.info("Using SUPABASE_SERVICE_ROLE key for authentication")
+        elif regular_key:
+            logger.warning("Using regular SUPABASE_KEY - this may not bypass RLS policies")
         
         if not supabase_url or not supabase_key:
-            raise ValueError("SUPABASE_URL and SUPABASE_KEY or SUPABASE_SERVICE_ROLE must be set in .env file")
+            raise ValueError("SUPABASE_URL and either SUPABASE_SERVICE_ROLE or SUPABASE_KEY must be set in environment variables")
         
         # Initialize Supabase client
         self.client = create_client(supabase_url, supabase_key)
@@ -51,11 +63,36 @@ class SupabaseClient:
                 return None
         except Exception as e:
             logger.error(f"Error saving price data: {e}")
+            
+            # Check for RLS policy violations
+            rls_error = False
+            error_details = {}
+            
             # Print more detailed error information if available
             if hasattr(e, 'response'):
                 try:
                     error_details = e.response.json()
                     logger.error(f"Response error details: {error_details}")
-                except:
-                    logger.error(f"Response error (not JSON): {e.response.text if hasattr(e.response, 'text') else 'No text'}")
+                    
+                    # Check if this is an RLS policy violation
+                    if isinstance(error_details, dict):
+                        error_message = error_details.get('message', '')
+                        error_code = error_details.get('code', '')
+                        
+                        if 'row-level security policy' in error_message or error_code == '42501':
+                            rls_error = True
+                            logger.error("RLS policy violation detected. Make sure you're using the SUPABASE_SERVICE_ROLE key.")
+                            logger.error("If running in GitHub Actions, check that the secret is correctly configured.")
+                except Exception as parse_error:
+                    logger.error(f"Could not parse error response: {e.response} - {parse_error}")
+            
+            # Provide specific guidance for RLS errors
+            if rls_error:
+                logger.error("\n=== TROUBLESHOOTING RLS ERRORS ===")
+                logger.error("1. Ensure SUPABASE_SERVICE_ROLE is correctly set in environment variables")
+                logger.error("2. If using GitHub Actions, check that the secret is properly configured")
+                logger.error("3. Verify that the service role key has the correct permissions")
+                logger.error("4. Check the RLS policies in your Supabase dashboard")
+                logger.error("===============================\n")
+            
             return None

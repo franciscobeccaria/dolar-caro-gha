@@ -32,7 +32,13 @@ jobs:
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           SAVE_TO_SUPABASE: 'true'
           DEBUG: 'true'
-        run: python main.py
+        run: |
+          echo "Checking environment variables (without exposing secrets)"
+          if [ -n "$SUPABASE_URL" ]; then echo "SUPABASE_URL is set"; else echo "SUPABASE_URL is NOT set"; fi
+          if [ -n "$SUPABASE_KEY" ]; then echo "SUPABASE_KEY is set"; else echo "SUPABASE_KEY is NOT set"; fi
+          if [ -n "$SUPABASE_SERVICE_ROLE" ]; then echo "SUPABASE_SERVICE_ROLE is set"; else echo "SUPABASE_SERVICE_ROLE is NOT set"; fi
+          echo "Running price scraper..."
+          python main.py
       
       - name: Configure Git
         run: |
