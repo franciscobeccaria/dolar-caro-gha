@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 import json
+import uuid
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from dotenv import load_dotenv
@@ -53,18 +54,30 @@ def save_results_to_file(results: List[Dict[str, Any]]):
         product_key = result.get('product_key')
         product_name = PRODUCT_MAPPING.get(product_key, product_key)
         
+        # Convert product name to a slug for product_id
+        product_id = product_name.lower().replace(' ', '-')
+        
+        # Create the base structure
         processed_result = {
-            'product_name': product_name,
-            'timestamp': datetime.now().isoformat()
+            'product_id': product_id,
+            'created_at': datetime.now().isoformat(),
+            'data': {},
+            'uuid': str(uuid.uuid4())
         }
+        
+        # Initialize the data structure
+        data = {}
         
         # Process Argentina price
         ar_price = result.get('ar_price')
         ar_url = result.get('ar_url')
         if ar_price:
-            processed_result['ar_price'] = ar_price
-            processed_result['ar_url'] = ar_url
-            processed_result['ar_currency'] = 'ARS'
+            data['AR'] = {
+                'value': ar_price,
+                'source': ar_url,
+                'currency': 'ARS',
+                'description': f"Scraped from {ar_url}"
+            }
         elif ar_url:
             logger.error(f"Failed to extract price for {product_name} from Argentina site: {ar_url}")
         
@@ -72,14 +85,16 @@ def save_results_to_file(results: List[Dict[str, Any]]):
         us_price = result.get('us_price')
         us_url = result.get('us_url')
         if us_price:
-            processed_result['us_price'] = us_price
-            processed_result['us_url'] = us_url
-            processed_result['us_currency'] = 'USD'
+            data['US'] = {
+                'value': us_price,
+                'source': us_url,
+                'currency': 'USD',
+                'description': f"Scraped from {us_url}"
+            }
         elif us_url:
             logger.error(f"Failed to extract price for {product_name} from US site: {us_url}")
         
         # Add exchange rates from API
-        # Fetch the dollar API data
         try:
             import requests
             
@@ -87,7 +102,7 @@ def save_results_to_file(results: List[Dict[str, Any]]):
             response = requests.get('https://dolarapi.com/v1/dolares')
             if response.status_code == 200:
                 dollar_data = response.json()
-                processed_result['exchange_rates'] = dollar_data
+                data['exchange_rates'] = dollar_data
                 
                 # Create a dictionary for easier access to rates by type
                 rates_by_type = {}
@@ -108,6 +123,41 @@ def save_results_to_file(results: List[Dict[str, Any]]):
                 logger.error(f"Failed to fetch dollar rates: {response.status_code}")
         except Exception as e:
             logger.error(f"Error fetching dollar rates: {e}")
+        
+        # Add the data to the result
+        processed_result['data'] = data
+        
+        # Add a detailed description with screenshots
+        details = f"Price data for {product_name} scraped on {datetime.now().strftime('%Y-%m-%d')}\n\n---\n\n"
+        
+        # Determine which scraper was used based on product_key
+        scraper_prefix = 'nike' if product_key == 'air_force_1' else 'adidas'
+        
+        # Get the most recent screenshots
+        screenshots = {}
+        for filename in os.listdir('screenshots'):
+            if not filename.endswith('.png'):
+                continue
+                
+            if scraper_prefix in filename.lower():
+                if 'ar_' in filename.lower():
+                    if 'ar' not in screenshots or filename > screenshots['ar']:
+                        screenshots['ar'] = filename
+                elif 'us_' in filename.lower():
+                    if 'us' not in screenshots or filename > screenshots['us']:
+                        screenshots['us'] = filename
+        
+        # Add Argentina screenshot if available
+        if 'AR' in data and 'ar' in screenshots:
+            ar_screenshot_path = f"screenshots/{screenshots['ar']}"
+            details += f"🇦🇷 **Argentina**  \n\n![{product_name} Argentina]({ar_screenshot_path})\n\n---\n\n"
+        
+        # Add US screenshot if available
+        if 'US' in data and 'us' in screenshots:
+            us_screenshot_path = f"screenshots/{screenshots['us']}"
+            details += f"🇺🇸 **United States**  \n\n![{product_name} USA]({us_screenshot_path})"
+        
+        processed_result['details'] = details
         
         processed_results.append(processed_result)
     

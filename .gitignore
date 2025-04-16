@@ -34,8 +34,8 @@ ENV/
 *.swo
 
 # Project specific
-screenshots/
-data/
+# screenshots/ - Now tracked
+# data/ - Now tracked
 *.log
 
 # Mac OS

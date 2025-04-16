@@ -1,0 +1,158 @@
+[
+  {
+    "product_id": "nike-air-force-1",
+    "created_at": "2025-04-16T18:43:22.842088",
+    "data": {
+      "AR": {
+        "value": 199.999,
+        "source": "https://www.nike.com.ar/nike-air-force-1--07-cw2288-111/p",
+        "currency": "ARS",
+        "description": "Scraped from https://www.nike.com.ar/nike-air-force-1--07-cw2288-111/p"
+      },
+      "US": {
+        "value": 115.0,
+        "source": "https://www.nike.com/t/air-force-1-07-mens-shoes-5QFp5Z/CW2288-111",
+        "currency": "USD",
+        "description": "Scraped from https://www.nike.com/t/air-force-1-07-mens-shoes-5QFp5Z/CW2288-111"
+      },
+      "exchange_rates": [
+        {
+          "moneda": "USD",
+          "casa": "oficial",
+          "nombre": "Oficial",
+          "compra": 1110,
+          "venta": 1160,
+          "fechaActualizacion": "2025-04-16T16:41:00.000Z"
+        },
+        {
+          "moneda": "USD",
+          "casa": "blue",
+          "nombre": "Blue",
+          "compra": 1220,
+          "venta": 1250,
+          "fechaActualizacion": "2025-04-16T20:56:00.000Z"
+        },
+        {
+          "moneda": "USD",
+          "casa": "bolsa",
+          "nombre": "Bolsa",
+          "compra": 1160.8,
+          "venta": 1175.4,
+          "fechaActualizacion": "2025-04-16T20:56:00.000Z"
+        },
+        {
+          "moneda": "USD",
+          "casa": "contadoconliqui",
+          "nombre": "Contado con liquidaci\u00f3n",
+          "compra": 1171.3,
+          "venta": 1191,
+          "fechaActualizacion": "2025-04-16T20:56:00.000Z"
+        },
+        {
+          "moneda": "USD",
+          "casa": "mayorista",
+          "nombre": "Mayorista",
+          "compra": 1126,
+          "venta": 1135,
+          "fechaActualizacion": "2025-04-16T15:12:00.000Z"
+        },
+        {
+          "moneda": "USD",
+          "casa": "cripto",
+          "nombre": "Cripto",
+          "compra": 1203.05,
+          "venta": 1207.15,
+          "fechaActualizacion": "2025-04-16T20:56:00.000Z"
+        },
+        {
+          "moneda": "USD",
+          "casa": "tarjeta",
+          "nombre": "Tarjeta",
+          "compra": 1443,
+          "venta": 1508,
+          "fechaActualizacion": "2025-04-16T16:41:00.000Z"
+        }
+      ]
+    },
+    "uuid": "79b0326f-dda8-4af8-b71f-fb8076af0ba2",
+    "details": "Price data for Nike Air Force 1 scraped on 2025-04-16\n\n---\n\n\ud83c\udde6\ud83c\uddf7 **Argentina**  \n\n![Nike Air Force 1 Argentina](screenshots/nike_ar_20250416_184306.png)\n\n---\n\n\ud83c\uddfa\ud83c\uddf8 **United States**  \n\n![Nike Air Force 1 USA](screenshots/nike_us_20250416_184322.png)"
+  },
+  {
+    "product_id": "argentina-anniversary-jersey",
+    "created_at": "2025-04-16T18:43:23.220868",
+    "data": {
+      "AR": {
+        "value": 149.999,
+        "source": "https://www.adidas.com.ar/camiseta-aniversario-50-anos-seleccion-argentina/JF0395.html",
+        "currency": "ARS",
+        "description": "Scraped from https://www.adidas.com.ar/camiseta-aniversario-50-anos-seleccion-argentina/JF0395.html"
+      },
+      "US": {
+        "value": 100.0,
+        "source": "https://www.adidas.com/us/argentina-anniversary-jersey/JF2641.html",
+        "currency": "USD",
+        "description": "Scraped from https://www.adidas.com/us/argentina-anniversary-jersey/JF2641.html"
+      },
+      "exchange_rates": [
+        {
+          "moneda": "USD",
+          "casa": "oficial",
+          "nombre": "Oficial",
+          "compra": 1110,
+          "venta": 1160,
+          "fechaActualizacion": "2025-04-16T16:41:00.000Z"
+        },
+        {
+          "moneda": "USD",
+          "casa": "blue",
+          "nombre": "Blue",
+          "compra": 1220,
+          "venta": 1250,
+          "fechaActualizacion": "2025-04-16T20:56:00.000Z"
+        },
+        {
+          "moneda": "USD",
+          "casa": "bolsa",
+          "nombre": "Bolsa",
+          "compra": 1160.8,
+          "venta": 1175.4,
+          "fechaActualizacion": "2025-04-16T20:56:00.000Z"
+        },
+        {
+          "moneda": "USD",
+          "casa": "contadoconliqui",
+          "nombre": "Contado con liquidaci\u00f3n",
+          "compra": 1171.3,
+          "venta": 1191,
+          "fechaActualizacion": "2025-04-16T20:56:00.000Z"
+        },
+        {
+          "moneda": "USD",
+          "casa": "mayorista",
+          "nombre": "Mayorista",
+          "compra": 1126,
+          "venta": 1135,
+          "fechaActualizacion": "2025-04-16T15:12:00.000Z"
+        },
+        {
+          "moneda": "USD",
+          "casa": "cripto",
+          "nombre": "Cripto",
+          "compra": 1203.05,
+          "venta": 1207.15,
+          "fechaActualizacion": "2025-04-16T20:56:00.000Z"
+        },
+        {
+          "moneda": "USD",
+          "casa": "tarjeta",
+          "nombre": "Tarjeta",
+          "compra": 1443,
+          "venta": 1508,
+          "fechaActualizacion": "2025-04-16T16:41:00.000Z"
+        }
+      ]
+    },
+    "uuid": "32e2d543-2108-4960-b812-d5d301c07561",
+    "details": "Price data for Argentina Anniversary Jersey scraped on 2025-04-16\n\n---\n\n\ud83c\udde6\ud83c\uddf7 **Argentina**  \n\n![Argentina Anniversary Jersey Argentina](screenshots/adidas_ar_20250416_184256.png)\n\n---\n\n\ud83c\uddfa\ud83c\uddf8 **United States**  \n\n![Argentina Anniversary Jersey USA](screenshots/adidas_us_20250416_184301.png)"
+  }
+]
