@@ -1,34 +1,26 @@
 import os
 import logging
 import asyncio
+import json
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from dotenv import load_dotenv
 
 from scrapers.nike_scraper import NikeScraper
 from scrapers.adidas_scraper import AdidasScraper
-from supabase_client import SupabaseClient
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('main')
 
-# Create screenshots directory if it doesn't exist
+# Create directories if they don't exist
 os.makedirs('screenshots', exist_ok=True)
 os.makedirs('data', exist_ok=True)
 
-# Product mapping for database
+# Product mapping
 PRODUCT_MAPPING = {
     'air_force_1': 'Nike Air Force 1',
     'argentina_jersey': 'Argentina Anniversary Jersey'
-}
-
-# Currency mapping
-CURRENCY_MAPPING = {
-    'AR': 'ARS',
-    'US': 'USD',
-    'BR': 'BRL',
-    'CL': 'CLP'
 }
 
 async def run_nike_scraper(debug: bool = False) -> Dict[str, Any]:
@@ -51,67 +43,28 @@ async def run_adidas_scraper(debug: bool = False) -> Dict[str, Any]:
         logger.error(f"Adidas scraper error: {e}")
         return {"product_key": "argentina_jersey"}
 
-def save_to_supabase(results: List[Dict[str, Any]]):
-    """Save scraping results to Supabase"""
-    logger.info("Saving results to Supabase")
-    
-    # Initialize Supabase client
-    try:
-        supabase = SupabaseClient()
-    except Exception as e:
-        logger.error(f"Failed to initialize Supabase client: {e}")
-        return
-    
-    # Fetch all dollar rates from the API
-    logger.info("Fetching all dollar rates from API")
-    all_rates = supabase.fetch_all_dollar_rates()
-    
-    # Get specific rates we need
-    blue_rate = None
-    oficial_rate = None
-    for rate_data in all_rates:
-        if rate_data.get('casa') == 'blue':
-            blue_rate = rate_data.get('venta')
-        elif rate_data.get('casa') == 'oficial':
-            oficial_rate = rate_data.get('venta')
-    
-    # If API failed, try to get rates from database
-    if not blue_rate:
-        blue_rate = supabase.get_blue_dollar_rate()
-    
-    logger.info(f"Current blue dollar rate: {blue_rate}")
-    logger.info(f"Current oficial dollar rate: {oficial_rate}")
+def save_results_to_file(results: List[Dict[str, Any]]):
+    """Save scraping results to a JSON file"""
+    logger.info("Saving results to file")
     
     # Process each result
+    processed_results = []
     for result in results:
         product_key = result.get('product_key')
         product_name = PRODUCT_MAPPING.get(product_key, product_key)
+        
+        processed_result = {
+            'product_name': product_name,
+            'timestamp': datetime.now().isoformat()
+        }
         
         # Process Argentina price
         ar_price = result.get('ar_price')
         ar_url = result.get('ar_url')
         if ar_price:
-            # Calculate USD values if rates are available
-            value_usd_blue = None
-            
-            if blue_rate:
-                value_usd_blue = ar_price / blue_rate
-                logger.info(f"{product_name} AR price in USD blue: ${value_usd_blue:.2f}")
-                
-            if oficial_rate:
-                value_usd_oficial = ar_price / oficial_rate
-                logger.info(f"{product_name} AR price in USD oficial: ${value_usd_oficial:.2f}")
-            
-            # Insert Argentina price
-            supabase.insert_price(
-                product_name=product_name,
-                country_code='AR',
-                value=ar_price,
-                currency='ARS',
-                value_usd_blue=value_usd_blue,
-                source_type='scraping',
-                description=f"Scraped from {ar_url}"
-            )
+            processed_result['ar_price'] = ar_price
+            processed_result['ar_url'] = ar_url
+            processed_result['ar_currency'] = 'ARS'
         elif ar_url:
             logger.error(f"Failed to extract price for {product_name} from Argentina site: {ar_url}")
         
@@ -119,28 +72,47 @@ def save_to_supabase(results: List[Dict[str, Any]]):
         us_price = result.get('us_price')
         us_url = result.get('us_url')
         if us_price:
-            # Insert US price
-            supabase.insert_price(
-                product_name=product_name,
-                country_code='US',
-                value=us_price,
-                currency='USD',
-                source_type='scraping',
-                description=f"Scraped from {us_url}"
-            )
+            processed_result['us_price'] = us_price
+            processed_result['us_url'] = us_url
+            processed_result['us_currency'] = 'USD'
         elif us_url:
             logger.error(f"Failed to extract price for {product_name} from US site: {us_url}")
+        
+        # Add exchange rates from API
+        # Fetch the dollar API data
+        try:
+            import requests
             
-            # Calculate and log price comparison if both prices and rates are available
-            if ar_price and blue_rate:
-                ar_in_usd_blue = ar_price / blue_rate
-                price_ratio_blue = (us_price / ar_in_usd_blue) * 100
-                logger.info(f"{product_name} price comparison: US is {price_ratio_blue:.2f}% of AR price (blue dollar)")
+            # Get the dollar rates from the API
+            response = requests.get('https://api.bluelytics.com.ar/v2/latest')
+            if response.status_code == 200:
+                dollar_data = response.json()
+                processed_result['exchange_rates'] = dollar_data
                 
-            if ar_price and oficial_rate:
-                ar_in_usd_oficial = ar_price / oficial_rate
-                price_ratio_oficial = (us_price / ar_in_usd_oficial) * 100
-                logger.info(f"{product_name} price comparison: US is {price_ratio_oficial:.2f}% of AR price (oficial dollar)")
+                # Log some useful information for reference
+                blue_rate = dollar_data.get('blue', {}).get('value_sell')
+                oficial_rate = dollar_data.get('oficial', {}).get('value_sell')
+                
+                if ar_price and us_price and blue_rate and oficial_rate:
+                    ar_in_usd_blue = ar_price / blue_rate
+                    ar_in_usd_oficial = ar_price / oficial_rate
+                    
+                    logger.info(f"{product_name} AR price in USD blue: ${ar_in_usd_blue:.2f}")
+                    logger.info(f"{product_name} AR price in USD oficial: ${ar_in_usd_oficial:.2f}")
+            else:
+                logger.error(f"Failed to fetch dollar rates: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Error fetching dollar rates: {e}")
+        
+        processed_results.append(processed_result)
+    
+    # Save to file
+    filename = f"data/scraping_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    with open(filename, 'w') as f:
+        json.dump(processed_results, f, indent=2)
+    
+    logger.info(f"Results saved to {filename}")
+    return filename
 
 async def main():
     """Main function to run scrapers and save results"""
@@ -159,8 +131,8 @@ async def main():
             run_adidas_scraper(debug)
         )
         
-        # Save results to Supabase
-        save_to_supabase(results)
+        # Save results to file
+        save_results_to_file(results)
         
         logger.info("Price scraping completed successfully")
     except Exception as e:
