@@ -84,14 +84,19 @@ def save_results_to_file(results: List[Dict[str, Any]]):
             import requests
             
             # Get the dollar rates from the API
-            response = requests.get('https://api.bluelytics.com.ar/v2/latest')
+            response = requests.get('https://dolarapi.com/v1/dolares')
             if response.status_code == 200:
                 dollar_data = response.json()
                 processed_result['exchange_rates'] = dollar_data
                 
+                # Create a dictionary for easier access to rates by type
+                rates_by_type = {}
+                for rate in dollar_data:
+                    rates_by_type[rate.get('casa')] = rate
+                
                 # Log some useful information for reference
-                blue_rate = dollar_data.get('blue', {}).get('value_sell')
-                oficial_rate = dollar_data.get('oficial', {}).get('value_sell')
+                blue_rate = rates_by_type.get('blue', {}).get('venta')
+                oficial_rate = rates_by_type.get('oficial', {}).get('venta')
                 
                 if ar_price and us_price and blue_rate and oficial_rate:
                     ar_in_usd_blue = ar_price / blue_rate
