@@ -18,7 +18,7 @@ class NikeScraper(BaseScraper):
             # Add more products as needed
         }
         
-        # No fallback prices - we'll raise errors instead
+        # No fallback prices - we'll use retry logic instead
     
     async def scrape(self, product_key: str = 'air_force_1') -> Dict[str, Any]:
         """Scrape prices for a Nike product"""
@@ -46,122 +46,188 @@ class NikeScraper(BaseScraper):
         }
     
     async def _scrape_argentina(self, playwright, url: str) -> float:
-        """Scrape price from Nike Argentina"""
+        """Scrape price from Nike Argentina with retry logic"""
         if not url:
             self.logger.error("No URL provided for Nike Argentina")
             raise ValueError("No URL provided for Nike Argentina")
         
         self.logger.info(f"Scraping Nike Argentina: {url}")
         price = None
+        max_retries = 3  # Maximum number of retry attempts
         
-        try:
-            # Create browser context for Argentina
-            browser, context, page = await self.create_browser_context(playwright, 'AR')
-            
-            # Add cookies for Nike Argentina
-            await context.add_cookies([{
-                'name': 'accept_cookies',
-                'value': 'true',
-                'domain': '.nike.com.ar',
-                'path': '/'
-            }])
-            
-            # Navigate to the URL with increased timeout and more robust handling
+        for attempt in range(1, max_retries + 1):
             try:
-                await page.goto(url, timeout=90000, wait_until='domcontentloaded')
-                # First wait for domcontentloaded, then try to wait for networkidle with a shorter timeout
-                try:
-                    await page.wait_for_load_state('networkidle', timeout=10000)
-                except Exception as load_error:
-                    self.logger.warning(f"Network idle timeout, continuing anyway: {load_error}")
+                self.logger.info(f"Attempt {attempt}/{max_retries} for Nike Argentina")
                 
-                # Additional wait time to ensure JavaScript loads
-                await asyncio.sleep(3)
-            
-                # Take screenshot if debugging is enabled
-                await self.take_screenshot(page, 'nike_ar')
+                # Create browser context for Argentina
+                browser, context, page = await self.create_browser_context(playwright, 'AR')
                 
-                # Try multiple selectors to find the price - prioritize the vtex selector which works
-                selectors = [
-                    '.vtex-product-price-1-x-sellingPriceValue',  # This is the one that works
-                    '.vtex-product-price-1-x-currencyContainer',
-                    '.vtex-product-price-1-x-sellingPrice',
-                    '.product-price',
-                    '.product-price__wrapper',
-                    '.price-tag-text',
-                    '.price',
-                    '.price-best-price',
-                    '[data-testid="price"]',
-                    '.product__price'
+                # Add cookies for Nike Argentina
+                await context.add_cookies([{
+                    'name': 'accept_cookies',
+                    'value': 'true',
+                    'domain': '.nike.com.ar',
+                    'path': '/'
+                }])
+                
+                # Use a different user agent each retry to avoid being detected as a bot
+                user_agents = [
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
                 ]
+                await context.add_init_script(f"navigator.userAgent='{user_agents[attempt-1]}'")
                 
-                price = await self.extract_price_with_selectors(page, selectors)
-                
-                # If no price found with selectors, try JavaScript evaluation first
-                if not price:
-                    self.logger.info("Trying to extract price using JavaScript evaluation...")
+                # Navigate to the URL with increased timeout and more robust handling
+                try:
+                    # Use a longer timeout for the first attempt
+                    timeout = 90000 if attempt == 1 else 120000
+                    await page.goto(url, timeout=timeout, wait_until='domcontentloaded')
+                    
+                    # First wait for domcontentloaded, then try to wait for networkidle with a shorter timeout
                     try:
-                        price_js = await page.evaluate("""
-                            () => {
-                                // Look specifically for the vtex price element
-                                const vtexPrice = document.querySelector('.vtex-product-price-1-x-sellingPriceValue');
-                                if (vtexPrice) {
-                                    return vtexPrice.textContent;
-                                }
-                                return null;
-                            }
-                        """)
-                        
-                        if price_js:
-                            self.logger.info(f"Found price via JavaScript: {price_js}")
-                            price = self._extract_price_from_text(price_js)
-                            if price is not None:
-                                self.logger.info(f"Successfully extracted price via JavaScript: {price} ARS")
-                                return price
-                    except Exception as js_error:
-                        self.logger.error(f"JavaScript evaluation failed: {js_error}")
+                        await page.wait_for_load_state('networkidle', timeout=10000)
+                    except Exception as load_error:
+                        self.logger.warning(f"Network idle timeout, continuing anyway: {load_error}")
+                    
+                    # Additional wait time to ensure JavaScript loads
+                    await asyncio.sleep(5)  # Increased from 3 to 5 seconds
                 
-                # If JavaScript evaluation fails, try to extract from entire page content
-                if not price:
-                    self.logger.info("Trying to extract price from entire page content...")
+                    # Take screenshot if debugging is enabled
+                    screenshot_name = f"nike_ar_attempt{attempt}"
+                    await self.take_screenshot(page, screenshot_name)
+                    
+                    # Check if we hit a Cloudflare CAPTCHA page
+                    cloudflare_detected = False
                     try:
-                        content = await page.content()
-                        # Look for price patterns in the HTML
-                        price_patterns = [
-                            r'\$\s*(\d+(?:[.,]\d+)*)',  # $199.999
-                            r'precio[^\d]+(\d+(?:[.,]\d+)*)',  # precio: 199.999
-                            r'price[^\d]+(\d+(?:[.,]\d+)*)',   # price: 199.999
-                            r'valor[^\d]+(\d+(?:[.,]\d+)*)'    # valor: 199.999
+                        # Look for common Cloudflare elements
+                        cloudflare_elements = [
+                            '.cf-browser-verification', 'iframe[src*="cloudflare"]',
+                            '.cf-error-code', '.cf-captcha-container', '#challenge-form',
+                            'h1:has-text("Verifying you are human")', 'h1:has-text("Verificando que eres humano")',
+                            'h1:has-text("Verifique que usted es un ser humano")'
                         ]
-                        
-                        for pattern in price_patterns:
-                            matches = re.findall(pattern, content, re.IGNORECASE)
-                            if matches:
-                                self.logger.info(f"Found price matches with pattern {pattern}: {matches}")
-                                # Take the first match and clean it
-                                price_str = re.sub(r'[.,]', '', matches[0])
-                                if price_str.isdigit():
-                                    price = float(price_str)
-                                    self.logger.info(f"Successfully extracted price from content: {price} ARS")
-                                    break
-                    except Exception as content_error:
-                        self.logger.error(f"Content extraction failed: {content_error}")
-            except Exception as nav_error:
-                self.logger.error(f"Navigation error: {nav_error}")
-            
-            # Close browser
-            await browser.close()
-            
-        except Exception as e:
-            self.logger.error(f"Error scraping Nike Argentina: {e}")
+                        for selector in cloudflare_elements:
+                            if await page.query_selector(selector):
+                                cloudflare_detected = True
+                                self.logger.warning(f"Cloudflare CAPTCHA detected on attempt {attempt}")
+                                break
+                    except Exception as cf_error:
+                        self.logger.error(f"Error checking for Cloudflare: {cf_error}")
+                    
+                    # If Cloudflare is detected, try again with a different approach
+                    if cloudflare_detected:
+                        if attempt < max_retries:
+                            self.logger.info(f"Retrying with different approach (attempt {attempt+1}/{max_retries})")
+                            await browser.close()
+                            await asyncio.sleep(5)  # Wait before retry
+                            continue
+                        else:
+                            self.logger.error("All attempts to bypass Cloudflare failed")
+                            return None
+                    
+                    # Try multiple selectors to find the price - prioritize the vtex selector which works
+                    selectors = [
+                        '.vtex-product-price-1-x-sellingPriceValue',  # This is the one that works
+                        '.vtex-product-price-1-x-currencyContainer',
+                        '.vtex-product-price-1-x-sellingPrice',
+                        '.product-price',
+                        '.product-price__wrapper',
+                        '.price-tag-text',
+                        '.price',
+                        '.price-best-price',
+                        '[data-testid="price"]',
+                        '.product__price'
+                    ]
+                    
+                    price = await self.extract_price_with_selectors(page, selectors)
+                    
+                    # If no price found with selectors, try JavaScript evaluation first
+                    if not price:
+                        self.logger.info("Trying to find price with JavaScript evaluation...")
+                        try:
+                            price_js = await page.evaluate("""
+                                () => {
+                                    // Look specifically for the vtex price element
+                                    const vtexPrice = document.querySelector('.vtex-product-price-1-x-sellingPriceValue');
+                                    if (vtexPrice) {
+                                        return vtexPrice.textContent;
+                                    }
+                                    return null;
+                                }
+                            """)
+                            
+                            if price_js:
+                                self.logger.info(f"Found price via JavaScript: {price_js}")
+                                price = self._extract_price_from_text(price_js)
+                                if price is not None:
+                                    self.logger.info(f"Successfully extracted price via JavaScript: {price} ARS")
+                                    await browser.close()
+                                    return price
+                        except Exception as js_error:
+                            self.logger.error(f"JavaScript evaluation failed: {js_error}")
+                    
+                    # If JavaScript evaluation fails, try to extract from entire page content
+                    if not price:
+                        self.logger.info("Trying to extract price from entire page content...")
+                        try:
+                            content = await page.content()
+                            # Look for price patterns in the HTML
+                            price_patterns = [
+                                r'\$\s*(\d+(?:[.,]\d+)*)',  # $199.999
+                                r'precio[^\d]+(\d+(?:[.,]\d+)*)',  # precio: 199.999
+                                r'price[^\d]+(\d+(?:[.,]\d+)*)',   # price: 199.999
+                                r'valor[^\d]+(\d+(?:[.,]\d+)*)'    # valor: 199.999
+                            ]
+                            
+                            for pattern in price_patterns:
+                                matches = re.findall(pattern, content, re.IGNORECASE)
+                                if matches:
+                                    self.logger.info(f"Found price matches with pattern {pattern}: {matches}")
+                                    # Take the first match and clean it
+                                    price_str = re.sub(r'[.,]', '', matches[0])
+                                    if price_str.isdigit():
+                                        price = float(price_str)
+                                        self.logger.info(f"Successfully extracted price from content: {price} ARS")
+                                        await browser.close()
+                                        return price
+                        except Exception as content_error:
+                            self.logger.error(f"Content extraction failed: {content_error}")
+                    
+                    # If we found a price, return it
+                    if price:
+                        await browser.close()
+                        return price
+                    
+                    # If we didn't find a price but didn't hit Cloudflare, try again if we have attempts left
+                    if attempt < max_retries:
+                        self.logger.info(f"No price found, retrying (attempt {attempt+1}/{max_retries})")
+                        await browser.close()
+                        await asyncio.sleep(3)  # Wait before retry
+                    else:
+                        self.logger.error("All attempts to extract price failed")
+                        await browser.close()
+                        return None
+                except Exception as nav_error:
+                    self.logger.error(f"Navigation error on attempt {attempt}: {nav_error}")
+                    if attempt < max_retries:
+                        self.logger.info(f"Retrying due to navigation error (attempt {attempt+1}/{max_retries})")
+                        await asyncio.sleep(3)  # Wait before retry
+                    else:
+                        self.logger.error("All attempts failed due to navigation errors")
+                        return None
+            except Exception as e:
+                self.logger.error(f"Error on attempt {attempt}: {e}")
+                if attempt < max_retries:
+                    self.logger.info(f"Retrying after error (attempt {attempt+1}/{max_retries})")
+                    await asyncio.sleep(3)  # Wait before retry
+                else:
+                    self.logger.error("All attempts failed due to errors")
+                    return None
         
-        # If all extraction methods fail, raise an error
-        if not price:
-            error_msg = "Failed to extract price from Nike Argentina"
-            self.logger.error(error_msg)
-            raise ValueError(error_msg)
-        
-        return price
+        # If we've exhausted all retries
+        self.logger.error("Failed to extract price from Nike Argentina after all retries")
+        return None
     
     async def _scrape_us(self, playwright, url: str) -> float:
         """Scrape price from Nike US"""
@@ -178,85 +244,65 @@ class NikeScraper(BaseScraper):
             
             # Add cookies for Nike US
             await context.add_cookies([{
-                'name': 'NIKE_COMMERCE_COUNTRY',
-                'value': 'US',
-                'domain': '.nike.com',
-                'path': '/'
-            }, {
-                'name': 'NIKE_COMMERCE_LANG_LOCALE',
-                'value': 'en_US',
+                'name': 'acceptedCookies',
+                'value': 'true',
                 'domain': '.nike.com',
                 'path': '/'
             }])
             
-            # Navigate to the URL with increased timeout and more robust handling
-            try:
-                await page.goto(url, timeout=90000, wait_until='domcontentloaded')
-                # First wait for domcontentloaded, then try to wait for networkidle with a shorter timeout
-                try:
-                    await page.wait_for_load_state('networkidle', timeout=10000)
-                except Exception as load_error:
-                    self.logger.warning(f"Network idle timeout, continuing anyway: {load_error}")
-                
-                # Additional wait time to ensure JavaScript loads
-                await asyncio.sleep(3)
+            # Navigate to the URL with increased timeout
+            await page.goto(url, timeout=60000, wait_until='domcontentloaded')
             
-                # Take screenshot if debugging is enabled
-                await self.take_screenshot(page, 'nike_us')
-                
-                # Try multiple selectors to find the price
-                selectors = [
-                    'div#price-container',
-                    'div.price-container',
-                    '.product-price',
-                    '.product-price__wrapper',
-                    '.css-b9fpep',
-                    '.css-1eqfhge',
-                    '.css-xf3ahq',
-                    '[data-test="product-price"]',
-                    '.price-container',
-                    '.price'
-                ]
-                
-                price = await self.extract_price_with_selectors(page, selectors)
-                
-                # If no price found with selectors, try JavaScript evaluation
-                if not price:
-                    self.logger.info("Trying to extract price using JavaScript evaluation...")
-                    try:
-                        # Try to extract price using JavaScript evaluation
-                        price_js = await page.evaluate('''
-                            () => {
-                                // Look specifically for the price container
-                                const priceContainer = document.querySelector('#price-container, div.price-container');
-                                if (priceContainer && priceContainer.textContent.includes('$')) {
-                                    return priceContainer.textContent;
-                                }
-                                
-                                // Look for price in any element with $ sign
-                                const allElements = document.querySelectorAll('*');
-                                for (const el of allElements) {
-                                    if (el.textContent && el.textContent.includes('$') && /\$\s*\d+/.test(el.textContent)) {
-                                        const text = el.textContent.trim();
-                                        if (text.length < 20) { // Avoid long text blocks
-                                            return text;
-                                        }
-                                    }
-                                }
-                                return null;
+            # Wait for network to be idle
+            try:
+                await page.wait_for_load_state('networkidle', timeout=5000)
+            except Exception as e:
+                self.logger.warning(f"Network idle timeout, continuing anyway: {e}")
+            
+            # Additional wait time to ensure JavaScript loads
+            await asyncio.sleep(2)
+            
+            # Take screenshot if debugging is enabled
+            await self.take_screenshot(page, 'nike_us')
+            
+            # Try to find the price with multiple selectors
+            selectors = [
+                '[data-test="product-price"]',
+                '.product-price',
+                '.css-b9fpep',  # Common Nike price class
+                '.css-1eqfhge',  # Another common Nike price class
+                '.css-12whm6j',  # Another price class
+                '[data-testid="product-price"]',
+                '.product-price__wrapper',
+                '.price',
+                '.price-tag-text',
+                '.price-best-price'
+            ]
+            
+            price = await self.extract_price_with_selectors(page, selectors)
+            
+            # If no price found with selectors, try JavaScript evaluation
+            if not price:
+                self.logger.info("Trying to extract price using JavaScript evaluation...")
+                try:
+                    price_js = await page.evaluate("""
+                        () => {
+                            // Look for price elements with specific data attributes
+                            const priceElement = document.querySelector('[data-test="product-price"]');
+                            if (priceElement) {
+                                return priceElement.textContent;
                             }
-                        ''')
-                        
-                        if price_js:
-                            self.logger.info(f"Found price via JavaScript: {price_js}")
-                            price_match = re.search(r'\$\s*(\d+(?:\.\d+)?)', price_js)
-                            if price_match:
-                                price = float(price_match.group(1))
-                                self.logger.info(f"Successfully extracted price via JavaScript: ${price} USD")
-                    except Exception as js_error:
-                        self.logger.error(f"JavaScript evaluation failed: {js_error}")
-            except Exception as nav_error:
-                self.logger.error(f"Navigation error: {nav_error}")
+                            return null;
+                        }
+                    """)
+                    
+                    if price_js:
+                        self.logger.info(f"Found price via JavaScript: {price_js}")
+                        price = self._extract_price_from_text(price_js)
+                        if price is not None:
+                            self.logger.info(f"Successfully extracted price via JavaScript: {price} USD")
+                except Exception as js_error:
+                    self.logger.error(f"JavaScript evaluation failed: {js_error}")
             
             # Close browser
             await browser.close()
@@ -321,7 +367,7 @@ class NikeScraper(BaseScraper):
             price_js = await page.evaluate("""
                 () => {
                     // Look for any element containing a dollar sign and a number
-                    const priceRegex = /\\$\\s*\\d+([.,]\\d+)?/;
+                    const priceRegex = /\$\s*\d+([.,]\d+)?/;
                     const allElements = document.querySelectorAll('*');
                     for (const el of allElements) {
                         if (el.textContent && priceRegex.test(el.textContent)) {

@@ -1,20 +1,23 @@
 # Price Scraper
 
-A serverless web scraping tool that collects product prices from Nike and Adidas websites across different countries (Argentina and USA) and stores them in a Supabase database for international price comparison analysis.
+A serverless web scraping tool that collects product prices from Nike and Adidas websites across different countries (Argentina and USA) and stores them in a structured JSON format with optional Supabase database integration for international price comparison analysis.
 
 ## Project Overview
 
-This project aims to compare product prices across different countries to analyze purchasing power and international price differences. It currently supports scraping prices for Nike Air Force 1 sneakers and Argentina Anniversary Jersey from both US and Argentina online stores, with plans to expand to more countries (Chile, Brazil) and additional products.
+This project aims to compare product prices across different countries to analyze purchasing power and international price differences. It currently supports scraping prices for Nike Air Force 1 sneakers and Argentina Anniversary Jersey from both US and Argentina online stores, with plans to expand to more countries (Chile, Brazil) and additional products. The project is designed to help understand purchasing power differences across countries and visualize dollar value variations.
 
 ## Features
 
 - Automated web scraping of Nike and Adidas product pages
 - Scrapes prices for Nike Air Force 1 and Argentina Anniversary Jersey
 - Real-time exchange rate fetching from [dolarapi.com](https://dolarapi.com/v1/dolares)
+- Comprehensive exchange rate data (official, blue, CCL, crypto, etc.)
 - Supports multiple countries (currently US and Argentina)
-- Price comparison calculations using both official and blue dollar rates
-- Data storage in Supabase database
-- Screenshot capture for debugging and verification
+- Price comparison calculations using various dollar rates
+- Structured JSON data storage with screenshots embedded in details
+- Optional Supabase database integration
+- Automatic screenshot capture for visual verification
+- GitHub Actions workflow for scheduled scraping
 
 ## Project Structure
 
@@ -64,46 +67,45 @@ This project aims to compare product prices across different countries to analyz
 
 ### Database Setup
 
-Ensure your Supabase database has the following tables:
-
-1. `products` - Product information
-2. `countries` - Country information
-3. `sources` - Data source information
-4. `prices` - Price records with foreign keys to the above tables
-5. `exchange_rates` - Currency exchange rate records
-
-Also, make sure to set up the `insert_price_record` RPC function and appropriate Row Level Security (RLS) policies.
+The project uses a Supabase database with a single `precios` table that stores all price data in a structured JSON format. The schema is provided in the `supabase_schema.sql` file.
 
 ### Supabase Setup
 
-Create a `prices` table in your Supabase project with the following schema:
+Create a `precios` table in your Supabase project with the following schema:
 
 ```sql
-create table prices (
-  id uuid default uuid_generate_v4() primary key,
-  product_id text not null,
-  country_id text not null,
-  value float not null,
-  currency text not null,
-  value_usd_blue float,
-  source_id text not null,
-  date timestamp with time zone default now(),
-  description text
+CREATE TABLE IF NOT EXISTS public.precios (
+  id BIGSERIAL PRIMARY KEY,
+  product_id TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  data JSONB NOT NULL,
+  uuid UUID NOT NULL,
+  details TEXT,
+  CONSTRAINT unique_product_id_created_at UNIQUE (product_id, created_at)
 );
 ```
 
-Optionally, create an `exchange_rates` table to store blue dollar rates:
+The `data` JSONB field contains a structured object with:
+
+- Country-specific price information (AR, US)
+- Exchange rates from various sources (official, blue, etc.)
+
+The `details` field contains a markdown-formatted description with embedded screenshots of the product pages.
+
+#### Row Level Security (RLS)
+
+Make sure to set up appropriate Row Level Security (RLS) policies to allow your application to insert data. The following policy is required:
 
 ```sql
-create table exchange_rates (
-  id uuid default uuid_generate_v4() primary key,
-  from_currency text not null,
-  to_currency text not null,
-  rate float not null,
-  source text not null,
-  date timestamp with time zone default now()
-);
+CREATE POLICY "Allow inserts for authenticated users"
+  ON public.precios FOR INSERT
+  TO authenticated
+  USING (true);
 ```
+
+Without this policy, you'll encounter the error: `new row violates row-level security policy for table "precios"`.
+
+A complete set of RLS policies is provided in the `supabase_schema.sql` file.
 
 ## Usage
 
@@ -113,11 +115,64 @@ Run the scraper manually:
 python main.py
 ```
 
+Or with Supabase integration disabled:
+
+```bash
+SAVE_TO_SUPABASE=false python main.py
+```
+
 The scraper will:
+
 1. Scrape prices from Nike and Adidas websites for both US and Argentina
-2. Retrieve the latest blue dollar rate from Supabase (if available)
-3. Calculate USD blue equivalents for Argentine prices
-4. Store all results in the Supabase `prices` table
+2. Capture screenshots of each product page for reference
+3. Fetch the latest exchange rates from dolarapi.com (including official, blue, CCL, etc.)
+4. Save the data locally in a structured JSON format in the `data/` directory
+5. Store the complete data in the Supabase `precios` table (if SAVE_TO_SUPABASE=true)
+
+The saved data includes:
+
+- Product details and prices from each country
+- Screenshots embedded in the details field
+- Comprehensive exchange rate information
+- Calculated USD equivalents using different exchange rates
+
+### Data Structure
+
+The JSON data is structured as follows:
+
+```json
+{
+  "product_id": "nike-air-force-1",
+  "created_at": "2025-04-16T18:43:22.842088",
+  "data": {
+    "AR": {
+      "value": 199.999,
+      "source": "https://www.nike.com.ar/nike-air-force-1--07-cw2288-111/p",
+      "currency": "ARS",
+      "description": "Scraped from Nike Argentina"
+    },
+    "US": {
+      "value": 115.0,
+      "source": "https://www.nike.com/t/air-force-1-07-mens-shoes-5QFp5Z/CW2288-111",
+      "currency": "USD",
+      "description": "Scraped from Nike US"
+    },
+    "exchange_rates": [
+      {
+        "moneda": "USD",
+        "casa": "oficial",
+        "nombre": "Oficial",
+        "compra": 1110,
+        "venta": 1160,
+        "fechaActualizacion": "2025-04-16T16:41:00.000Z"
+      }
+      // Additional exchange rates...
+    ]
+  },
+  "uuid": "79b0326f-dda8-4af8-b71f-fb8076af0ba2",
+  "details": "Price data with embedded screenshots..."
+}
+```
 
 ## GitHub Actions
 
@@ -133,6 +188,8 @@ The project includes a GitHub Actions workflow that runs the scraper daily. To u
 ```
 ├── .github/workflows/  # GitHub Actions workflows
 │   └── scraper.yml     # Daily scraper workflow
+├── data/               # Directory for saved JSON data
+├── screenshots/        # Directory for product page screenshots
 ├── scrapers/           # Scraper modules
 │   ├── __init__.py
 │   ├── base_scraper.py # Base scraper class

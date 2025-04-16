@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from scrapers.nike_scraper import NikeScraper
 from scrapers.adidas_scraper import AdidasScraper
+from supabase_client import SupabaseClient
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -44,9 +45,9 @@ async def run_adidas_scraper(debug: bool = False) -> Dict[str, Any]:
         logger.error(f"Adidas scraper error: {e}")
         return {"product_key": "argentina_jersey"}
 
-def save_results_to_file(results: List[Dict[str, Any]]):
-    """Save scraping results to a JSON file"""
-    logger.info("Saving results to file")
+def save_results(results: List[Dict[str, Any]], save_to_supabase: bool = True):
+    """Save scraping results to a JSON file and optionally to Supabase"""
+    logger.info("Processing scraping results")
     
     # Process each result
     processed_results = []
@@ -76,10 +77,10 @@ def save_results_to_file(results: List[Dict[str, Any]]):
                 'value': ar_price,
                 'source': ar_url,
                 'currency': 'ARS',
-                'description': f"Scraped from {ar_url}"
+                'description': f"Obtenido de {ar_url}"
             }
         elif ar_url:
-            logger.error(f"Failed to extract price for {product_name} from Argentina site: {ar_url}")
+            logger.error(f"No se pudo extraer el precio para {product_name} del sitio de Argentina: {ar_url}")
         
         # Process US price
         us_price = result.get('us_price')
@@ -89,10 +90,10 @@ def save_results_to_file(results: List[Dict[str, Any]]):
                 'value': us_price,
                 'source': us_url,
                 'currency': 'USD',
-                'description': f"Scraped from {us_url}"
+                'description': f"Obtenido de {us_url}"
             }
         elif us_url:
-            logger.error(f"Failed to extract price for {product_name} from US site: {us_url}")
+            logger.error(f"No se pudo extraer el precio para {product_name} del sitio de Estados Unidos: {us_url}")
         
         # Add exchange rates from API
         try:
@@ -117,8 +118,8 @@ def save_results_to_file(results: List[Dict[str, Any]]):
                     ar_in_usd_blue = ar_price / blue_rate
                     ar_in_usd_oficial = ar_price / oficial_rate
                     
-                    logger.info(f"{product_name} AR price in USD blue: ${ar_in_usd_blue:.2f}")
-                    logger.info(f"{product_name} AR price in USD oficial: ${ar_in_usd_oficial:.2f}")
+                    logger.info(f"{product_name} precio AR en USD blue: ${ar_in_usd_blue:.2f}")
+                    logger.info(f"{product_name} precio AR en USD oficial: ${ar_in_usd_oficial:.2f}")
             else:
                 logger.error(f"Failed to fetch dollar rates: {response.status_code}")
         except Exception as e:
@@ -127,8 +128,8 @@ def save_results_to_file(results: List[Dict[str, Any]]):
         # Add the data to the result
         processed_result['data'] = data
         
-        # Add a detailed description with screenshots
-        details = f"Price data for {product_name} scraped on {datetime.now().strftime('%Y-%m-%d')}\n\n---\n\n"
+        # Add a detailed description with screenshots in Spanish
+        details = f"Datos de precio para {product_name} obtenidos el {datetime.now().strftime('%Y-%m-%d')}\n\n---\n\n"
         
         # Determine which scraper was used based on product_key
         scraper_prefix = 'nike' if product_key == 'air_force_1' else 'adidas'
@@ -155,7 +156,7 @@ def save_results_to_file(results: List[Dict[str, Any]]):
         # Add US screenshot if available
         if 'US' in data and 'us' in screenshots:
             us_screenshot_path = f"screenshots/{screenshots['us']}"
-            details += f"🇺🇸 **United States**  \n\n![{product_name} USA]({us_screenshot_path})"
+            details += f"🇺🇸 **Estados Unidos**  \n\n![{product_name} Estados Unidos]({us_screenshot_path})"
         
         processed_result['details'] = details
         
@@ -167,6 +168,19 @@ def save_results_to_file(results: List[Dict[str, Any]]):
         json.dump(processed_results, f, indent=2)
     
     logger.info(f"Results saved to {filename}")
+    
+    # Save to Supabase if requested
+    if save_to_supabase:
+        try:
+            # Initialize Supabase client
+            supabase = SupabaseClient()
+            
+            # Save all results to Supabase at once
+            for result in processed_results:
+                supabase.save_price_data(result)
+        except Exception as e:
+            logger.error(f"Error saving to Supabase: {e}")
+    
     return filename
 
 async def main():
@@ -179,6 +193,9 @@ async def main():
     # Check if debug mode is enabled
     debug = os.getenv('DEBUG', 'false').lower() == 'true'
     
+    # Check if we should save to Supabase
+    save_to_supabase = os.getenv('SAVE_TO_SUPABASE', 'true').lower() == 'true'
+    
     try:
         # Run scrapers concurrently
         results = await asyncio.gather(
@@ -186,10 +203,29 @@ async def main():
             run_adidas_scraper(debug)
         )
         
-        # Save results to file
-        save_results_to_file(results)
+        # Filter results to keep only those with complete data
+        successful_results = []
+        for result in results:
+            product_key = result.get('product_key')
+            if not product_key:
+                continue
+                
+            product_name = PRODUCT_MAPPING.get(product_key, product_key)
+            
+            # Check if we have both AR and US prices
+            if result.get('ar_price') is None or result.get('us_price') is None:
+                logger.error(f"Incomplete data for {product_name}: AR price: {result.get('ar_price')}, US price: {result.get('us_price')}")
+                logger.warning(f"Skipping {product_name} due to incomplete data")
+            else:
+                logger.info(f"Complete data for {product_name}: AR price: {result.get('ar_price')}, US price: {result.get('us_price')}")
+                successful_results.append(result)
         
-        logger.info("Price scraping completed successfully")
+        if successful_results:
+            # Save successful results to file and optionally to Supabase
+            save_results(successful_results, save_to_supabase=save_to_supabase)
+            logger.info(f"Price scraping completed with {len(successful_results)} of {len(results)} products successfully scraped")
+        else:
+            logger.error("Price scraping completed with errors. No data saved.")
     except Exception as e:
         logger.error(f"Error running scrapers: {e}")
 
