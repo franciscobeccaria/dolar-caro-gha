@@ -1,0 +1,17 @@
+# Web scraping
+playwright==1.40.0
+
+# Supabase
+supabase==1.0.3
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Async support
+asyncio==3.4.3
+
+# Typing
+typing-extensions==4.7.1
+
+# HTTP requests
+requests==2.31.0
