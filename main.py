@@ -22,7 +22,13 @@ os.makedirs('data', exist_ok=True)
 # Product mapping
 PRODUCT_MAPPING = {
     'air_force_1': 'Nike Air Force 1',
-    'argentina_jersey': 'Argentina Anniversary Jersey'
+    'argentina_jersey': 'Camiseta Aniversario Argentina'
+}
+
+# Product ID mapping for saving to JSON/Supabase
+PRODUCT_ID_MAPPING = {
+    'air_force_1': 'nike-air-force-1',
+    'argentina_jersey': 'camiseta-aniversario-argentina'
 }
 
 async def run_nike_scraper(debug: bool = False) -> Dict[str, Any]:
@@ -55,8 +61,8 @@ def save_results(results: List[Dict[str, Any]], save_to_supabase: bool = True):
         product_key = result.get('product_key')
         product_name = PRODUCT_MAPPING.get(product_key, product_key)
         
-        # Convert product name to a slug for product_id
-        product_id = product_name.lower().replace(' ', '-')
+        # Get product_id from mapping or generate from product name
+        product_id = PRODUCT_ID_MAPPING.get(product_key, product_name.lower().replace(' ', '-'))
         
         # Create the base structure
         processed_result = {
