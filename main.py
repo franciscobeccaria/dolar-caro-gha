@@ -76,7 +76,19 @@ def save_results(results: List[Dict[str, Any]], save_to_supabase: bool = True):
         data = {}
         
         # Process Argentina price
-        ar_price = result.get('ar_price')
+        
+        # Process Argentina price (remove thousands separator if present)
+        ar_price_raw = result.get('ar_price')
+        ar_price = None
+
+        if ar_price_raw is not None:
+            # Forzar a string, limpiar puntos, convertir a float
+            ar_price_str = str(ar_price_raw).replace('.', '').replace(',', '.')
+            try:
+                ar_price = float(ar_price_str)
+            except ValueError:
+                logger.warning(f"Precio AR inválido para {product_key}: {ar_price_raw}")
+
         ar_url = result.get('ar_url')
         if ar_price:
             data['AR'] = {
