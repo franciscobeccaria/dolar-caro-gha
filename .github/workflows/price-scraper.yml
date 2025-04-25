@@ -34,3 +34,11 @@ jobs:
         run: |
           echo "Running price scraper..."
           python main.py
+
+      - name: Trigger frontend revalidation
+        env:
+          REVALIDATION_TOKEN: ${{ secrets.REVALIDATION_TOKEN }}
+        run: |
+          curl -X POST "https://argentina-cara-fe.vercel.app/api/revalidate" \
+            -H "Content-Type: application/json" \
+            -d "{\"secret\":\"$REVALIDATION_TOKEN\"}"
